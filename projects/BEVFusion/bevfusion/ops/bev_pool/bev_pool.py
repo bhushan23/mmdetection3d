@@ -111,15 +111,17 @@ class QuickCumsumCuda(torch.autograd.Function):
 def bev_pool(feats, coords, B, D, H, W):
     assert feats.shape[0] == coords.shape[0]
 
-    ranks = (
-        coords[:, 0] * (W * D * B) + coords[:, 1] * (D * B) +
-        coords[:, 2] * B + coords[:, 3])
-    indices = ranks.argsort()
-    feats, coords, ranks = feats[indices], coords[indices], ranks[indices]
+    # ranks = (
+    #     coords[:, 0] * (W * D * B) + coords[:, 1] * (D * B) +
+    #     coords[:, 2] * B + coords[:, 3])
+    # indices = ranks.argsort()
+    # feats, coords, ranks = feats[indices], coords[indices], ranks[indices]
 
-    # x = QuickCumsumCuda.apply(feats, coords, ranks, B, D, H, W)
-
-    x = QuickCumsum.apply(feats, coords, ranks, B, D, H, W)
+    # # x = QuickCumsumCuda.apply(feats, coords, ranks, B, D, H, W)
+    # x = QuickCumsum.apply(feats, coords, ranks, B, D, H, W)
+    out_size = B * D * H * W
+    x_sliced = feats[:out_size, :]
+    x = x_sliced.reshape((B, D, H, W, feats.shape[-1]))
     
     x = x.permute(0, 4, 1, 2, 3).contiguous()
     return x
