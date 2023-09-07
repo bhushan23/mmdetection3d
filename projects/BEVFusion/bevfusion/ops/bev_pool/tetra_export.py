@@ -15,32 +15,28 @@ class QCS(torch.nn.Module):
             4. build indices from interval start and end for source data
             5. map data from source data (5) to destination data (3)
         """
-        x = x.cumsum(0)
-        kept = torch.ones(x.shape[0], device=x.device, dtype=torch.bool)
+        x_prefix = x.cumsum(0)
+        kept = torch.ones(x_prefix.shape[0], device=x_prefix.device, dtype=torch.bool)
 
         kept[1:] = ranks[1:] != ranks[:-1]
         interval_starts = torch.where(kept)[0].int()
         interval_lengths = torch.zeros_like(interval_starts)
         interval_lengths[:-1] = interval_starts[1:] - interval_starts[:-1]
-        interval_lengths[-1] = x.shape[0] - interval_starts[-1]
-        interval_ends = interval_starts + interval_lengths
-        interval_ends[-1] -= 1
+        interval_lengths[-1] = x_prefix.shape[0] - interval_starts[-1]
+        interval_ends = interval_starts + interval_lengths - 1
 
         interval_ends = interval_ends.type(torch.int64)
         interval_starts = interval_starts.type(torch.int64)
-        last_val = x[-1]
-        x = x[interval_ends] - x[interval_starts]
-        x[-1] = last_val
+        x_prefix = x_prefix[interval_ends] - x_prefix[interval_starts] + x[interval_starts]
 
         gf_W, gf_H, gf_D, gf_B = torch.split(geom_feats, split_size_or_sections=[1, 1, 1, 1], dim=1)
         geom_feats = gf_W.squeeze(1) + gf_H.squeeze(1) * W + gf_D.squeeze(1) * H + gf_B.squeeze(1)
         geom_feats = geom_feats.type(torch.int64)
+        geom_feats = geom_feats[interval_starts]
 
-        C = x.shape[-1]
-        out = torch.zeros((B*D*H*W, C), device=x.device, dtype=x.dtype)
-
-        x = torch.repeat_interleave(x, interval_lengths, dim=0)
-        out[geom_feats, :] += x
+        C = x_prefix.shape[-1]
+        out = torch.zeros((B*D*H*W, C), device=x_prefix.device, dtype=x_prefix.dtype)
+        out[geom_feats, :] += x_prefix
         out = out.reshape((B, D, H, W, C))    
 
         # save kept for backward
@@ -76,7 +72,9 @@ traced_model = torch.jit.trace(m, (f, c))
 
 print(traced_model.graph)
 print(traced_model.code)
-# exit(0)
+
+
+
 
 hub.submit_profile_job(traced_model, name="bev_pool",
                     device=hub.Device(name="Samsung Galaxy S23 Ultra"),

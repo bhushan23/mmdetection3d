@@ -3,6 +3,18 @@ import torch
 from . import bev_pool_ext
 
 
+from math import log10, sqrt
+import numpy as np
+  
+def PSNR(original, compressed):
+    mse = np.mean((original - compressed) ** 2)
+    if(mse == 0):  # MSE is zero means no noise is present in the signal .
+                  # Therefore PSNR have no importance.
+        return 100
+    max_pixel = 255.0
+    psnr = 20 * log10(max_pixel / sqrt(mse))
+    return psnr
+
 class QuickCumsum(torch.autograd.Function):
 
     @staticmethod
@@ -14,32 +26,28 @@ class QuickCumsum(torch.autograd.Function):
             4. build indices from interval start and end for source data
             5. map data from source data (5) to destination data (3)
         """
-        x = x.cumsum(0)
-        kept = torch.ones(x.shape[0], device=x.device, dtype=torch.bool)
+        x_prefix = x.cumsum(0)
+        kept = torch.ones(x_prefix.shape[0], device=x_prefix.device, dtype=torch.bool)
 
         kept[1:] = ranks[1:] != ranks[:-1]
         interval_starts = torch.where(kept)[0].int()
         interval_lengths = torch.zeros_like(interval_starts)
         interval_lengths[:-1] = interval_starts[1:] - interval_starts[:-1]
-        interval_lengths[-1] = x.shape[0] - interval_starts[-1]
-        interval_ends = interval_starts + interval_lengths
-        interval_ends[-1] -= 1
+        interval_lengths[-1] = x_prefix.shape[0] - interval_starts[-1]
+        interval_ends = interval_starts + interval_lengths - 1
 
         interval_ends = interval_ends.type(torch.int64)
         interval_starts = interval_starts.type(torch.int64)
-        last_val = x[-1]
-        x = x[interval_ends] - x[interval_starts]
-        x[-1] = last_val
+        x_prefix = x_prefix[interval_ends] - x_prefix[interval_starts] + x[interval_starts]
 
         gf_W, gf_H, gf_D, gf_B = torch.split(geom_feats, split_size_or_sections=[1, 1, 1, 1], dim=1)
         geom_feats = gf_W.squeeze(1) + gf_H.squeeze(1) * W + gf_D.squeeze(1) * H + gf_B.squeeze(1)
         geom_feats = geom_feats.type(torch.int64)
+        geom_feats = geom_feats[interval_starts]
 
-        C = x.shape[-1]
-        out = torch.zeros((B*D*H*W, C), device=x.device, dtype=x.dtype)
-
-        x = torch.repeat_interleave(x, interval_lengths, dim=0)
-        out[geom_feats, :] += x
+        C = x_prefix.shape[-1]
+        out = torch.zeros((B*D*H*W, C), device=x_prefix.device, dtype=x_prefix.dtype)
+        out[geom_feats, :] += x_prefix
         out = out.reshape((B, D, H, W, C))    
 
         # save kept for backward
@@ -111,19 +119,22 @@ class QuickCumsumCuda(torch.autograd.Function):
 def bev_pool(feats, coords, B, D, H, W):
     assert feats.shape[0] == coords.shape[0]
 
-    # ranks = (
-    #     coords[:, 0] * (W * D * B) + coords[:, 1] * (D * B) +
-    #     coords[:, 2] * B + coords[:, 3])
-    # indices = ranks.argsort()
-    # feats, coords, ranks = feats[indices], coords[indices], ranks[indices]
+    ranks = (
+        coords[:, 0] * (W * D * B) + coords[:, 1] * (D * B) +
+        coords[:, 2] * B + coords[:, 3])
+    indices = ranks.argsort()
+    feats, coords, ranks = feats[indices], coords[indices], ranks[indices]
 
-    # # x = QuickCumsumCuda.apply(feats, coords, ranks, B, D, H, W)
-    # x = QuickCumsum.apply(feats, coords, ranks, B, D, H, W)
-    out_size = B * D * H * W
-    x_sliced = feats[:out_size, :]
-    x = x_sliced.reshape((B, D, H, W, feats.shape[-1]))
+    # x = QuickCumsumCuda.apply(feats, coords, ranks, B, D, H, W)
+    x = QuickCumsum.apply(feats, coords, ranks, B, D, H, W)
+
+    # xnp = x.detach().cpu().numpy()
+    # x_oursnp = x_ours.detach().cpu().numpy()
+    # print(PSNR(xnp, x_oursnp))
+    # out_size = B * D * H * W
+    # x_sliced = feats[:out_size, :]
+    # x = x_sliced.reshape((B, D, H, W, feats.shape[-1]))
     
     x = x.permute(0, 4, 1, 2, 3).contiguous()
     return x
-
 
