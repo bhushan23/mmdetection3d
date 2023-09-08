@@ -14,7 +14,7 @@ from .pointnet_modules import (PAConvCUDASAModule, PAConvCUDASAModuleMSG,
                                PAConvSAModule, PAConvSAModuleMSG,
                                PointFPModule, PointSAModule, PointSAModuleMSG,
                                build_sa_module)
-from .sparse_block import (SparseBasicBlock, SparseBottleneck,
+from .sparse_block import (SparseBasicBlock, SparseBottleneck, DenseBasicBlock,
                            make_sparse_convmodule)
 from .torchsparse_block import (TorchSparseBasicBlock, TorchSparseBottleneck,
                                 TorchSparseConvModule)

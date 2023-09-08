@@ -82,6 +82,16 @@ class BEVFusionSparseEncoder(SparseEncoder):
                 indice_key='subm1',
                 conv_type='SubMConv3d',
                 order=('conv', ))
+            self.dense_conv_input = make_sparse_convmodule(
+                in_channels,
+                self.base_channels,
+                3,
+                norm_cfg=norm_cfg,
+                padding=1,
+                indice_key='subm1',
+                conv_type='SubMConv3d',
+                order=('conv', ),
+                make_dense=True)
         else:  # post activate
             self.conv_input = make_sparse_convmodule(
                 in_channels,
@@ -91,6 +101,15 @@ class BEVFusionSparseEncoder(SparseEncoder):
                 padding=1,
                 indice_key='subm1',
                 conv_type='SubMConv3d')
+            self.dense_conv_input = make_sparse_convmodule(
+                in_channels,
+                self.base_channels,
+                3,
+                norm_cfg=norm_cfg,
+                padding=1,
+                indice_key='subm1',
+                conv_type='SubMConv3d',
+                make_dense=True)
 
         encoder_out_channels = self.make_encoder_layers(
             make_sparse_convmodule,
@@ -108,12 +127,16 @@ class BEVFusionSparseEncoder(SparseEncoder):
             indice_key='spconv_down2',
             conv_type='SparseConv3d')
 
-        self.dense_conv_in = nn.Conv3d(5, 16, (3, 3, 3), padding=[1,1,1], bias=False)
-        self.dense_conv_out = nn.Conv3d(128, 128, (1, 1, 3), padding=[0, 0, 0], stride=[1, 1, 2], bias=False)\
-    
-    def swap_convs(self):
-        self.conv_input[0] = self.dense_conv_in
-        self.conv_out[0] = self.dense_conv_out
+        self.dense_conv_out = make_sparse_convmodule(
+            encoder_out_channels,
+            self.output_channels,
+            kernel_size=(1, 1, 3),
+            stride=(1, 1, 2),
+            norm_cfg=norm_cfg,
+            padding=0,
+            indice_key='spconv_down2',
+            conv_type='SparseConv3d',
+            make_dense=True)
 
     def forward(self, voxel_features, coors, batch_size=1):
         """Forward of SparseEncoder.
@@ -141,7 +164,7 @@ class BEVFusionSparseEncoder(SparseEncoder):
         coors = coors.int()
         input_sp_tensor = SparseConvTensor(voxel_features, coors,
                                            self.sparse_shape, batch_size)
-        out = self.conv_input[0](input_sp_tensor)
+        # out = self.conv_ix = self.dense_conv_input(x)nput[0](input_sp_tensor)
 
         # dense_input = input_sp_tensor.dense()
         # d_out = self.dense_conv_in(dense_input)
@@ -152,16 +175,27 @@ class BEVFusionSparseEncoder(SparseEncoder):
         # x = self.conv_input(dense_input)
 
 
+        # encode_features = []
+        # for encoder_layer in self.encoder_layers:
+        #     x = encoder_layer(x)
+        #     encode_features.append(x)
+
+        # # for detection head
+        # # [200, 176, 5] -> [200, 176, 2]
+        # out = self.conv_out(encode_features[-1])
+        # spatial_features = out.dense()
+
+        x = input_sp_tensor.dense()
+        x = self.dense_conv_input(x)
+
         encode_features = []
-        for encoder_layer in self.encoder_layers:
+        for encoder_layer in self.dense_encoder_layers:
             x = encoder_layer(x)
             encode_features.append(x)
 
-        # for detection head
-        # [200, 176, 5] -> [200, 176, 2]
-        out = self.conv_out(encode_features[-1])
-        spatial_features = out.dense()
+        spatial_features = self.dense_conv_out(encode_features[-1])
 
+        N, C, D, H, W = spatial_features.shape
         N, C, H, W, D = spatial_features.shape
         spatial_features = spatial_features.permute(0, 1, 4, 2, 3).contiguous()
         spatial_features = spatial_features.view(N, C * D, H, W)

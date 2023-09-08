@@ -122,7 +122,7 @@ class SparseBasicBlock(BasicBlock, SparseModule):
         SparseModule.__init__(self)
         if conv_cfg is None:
             conv_cfg = dict(type='SubMConv3d')
-        conv_cfg.setdefault('indice_key', indice_key)
+        # conv_cfg.setdefault('indice_key', indice_key)
         if norm_cfg is None:
             norm_cfg = dict(type='BN1d')
         BasicBlock.__init__(
@@ -134,7 +134,7 @@ class SparseBasicBlock(BasicBlock, SparseModule):
             conv_cfg=conv_cfg,
             norm_cfg=norm_cfg)
 
-    def forward(self, x: SparseConvTensor) -> SparseConvTensor:
+    def forward(self, x) -> SparseConvTensor:
         identity = x.features
 
         assert x.features.dim() == 2, f'x.features.dim()={x.features.dim()}'
@@ -153,6 +153,67 @@ class SparseBasicBlock(BasicBlock, SparseModule):
 
         return out
 
+
+class DenseBasicBlock(BasicBlock, SparseModule):
+    """Sparse basic block for PartA^2.
+
+    Sparse basic block implemented with submanifold sparse convolution.
+
+    Args:
+        inplanes (int): Inplanes of block.
+        planes (int): Planes of block.
+        stride (int or Tuple[int]): Stride of the first block. Defaults to 1.
+        downsample (Module, optional): Down sample module for block.
+            Defaults to None.
+        indice_key (str): Indice key for spconv. Default to None.
+        conv_cfg (:obj:`ConfigDict` or dict, optional): Config dict for
+            convolution layer. Defaults to None.
+        norm_cfg (:obj:`ConfigDict` or dict, optional): Config dict for
+            normalization layer. Defaults to None.
+    """
+
+    expansion = 1
+
+    def __init__(self,
+                 inplanes: int,
+                 planes: int,
+                 stride: Union[int, Tuple[int]] = 1,
+                 downsample: nn.Module = None,
+                 indice_key: Optional[str] = None,
+                 conv_cfg: OptConfigType = None,
+                 norm_cfg: OptConfigType = None) -> None:
+        SparseModule.__init__(self)
+        if conv_cfg is None:
+            conv_cfg = dict(type='SubMConv3d')
+        # conv_cfg.setdefault('indice_key', indice_key)
+        if norm_cfg is None:
+            norm_cfg = dict(type='BN1d')
+        BasicBlock.__init__(
+            self,
+            inplanes,
+            planes,
+            stride=stride,
+            downsample=downsample,
+            conv_cfg=conv_cfg,
+            norm_cfg=norm_cfg)
+
+
+    def dense_forward(self, x):
+        identity = x
+        out = self.conv1(x)
+        out = replace_feature(out, self.norm1(out))
+        out = replace_feature(out, self.relu(out))
+
+        out = self.conv2(out)
+        out = replace_feature(out, self.norm2(out))
+
+        if self.downsample is not None:
+            identity = self.downsample(x)
+
+        out = replace_feature(out, out.features + identity)
+        out = replace_feature(out, self.relu(out.features))
+
+        return out
 
 def make_sparse_convmodule(in_channels: int,
                            out_channels: int,
@@ -223,8 +284,9 @@ def make_sparse_convmodule(in_channels: int,
                         bias=False))
         elif layer == 'norm':
             if make_dense:
-                layers.append()
-            layers.append(build_norm_layer(norm_cfg, out_channels)[1])
+                layers.append(nn.BatchNorm3d(out_channels))
+            else:
+                layers.append(build_norm_layer(norm_cfg, out_channels)[1])
         elif layer == 'act':
             layers.append(nn.ReLU(inplace=True))
 
