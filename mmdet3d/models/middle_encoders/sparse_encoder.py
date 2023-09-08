@@ -186,9 +186,12 @@ class SparseEncoder(nn.Module):
         """
         assert block_type in ['conv_module', 'basicblock']
         self.encoder_layers = SparseSequential()
+        import torch.nn as nn
+        self.dense_encoder_layers = []
 
         for i, blocks in enumerate(self.encoder_channels):
             blocks_list = []
+            dense_block_list = []
             for j, out_channels in enumerate(tuple(blocks)):
                 padding = tuple(self.encoder_paddings[i])[j]
                 # each stage started with a spconv layer
@@ -204,6 +207,17 @@ class SparseEncoder(nn.Module):
                             padding=padding,
                             indice_key=f'spconv{i + 1}',
                             conv_type='SparseConv3d'))
+                    dense_block_list.append(
+                        make_block(
+                            in_channels,
+                            out_channels,
+                            3,
+                            norm_cfg=norm_cfg,
+                            stride=2,
+                            padding=padding,
+                            indice_key=f'spconv{i + 1}',
+                            conv_type='Conv3d',
+                            make_dense=True))
                 elif block_type == 'basicblock':
                     if j == len(blocks) - 1 and i != len(
                             self.encoder_channels) - 1:

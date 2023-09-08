@@ -9,6 +9,7 @@ if IS_SPCONV2_AVAILABLE:
 else:
     from mmcv.ops import SparseConvTensor
 
+import torch.nn as nn
 
 @MODELS.register_module()
 class BEVFusionSparseEncoder(SparseEncoder):
@@ -107,7 +108,14 @@ class BEVFusionSparseEncoder(SparseEncoder):
             indice_key='spconv_down2',
             conv_type='SparseConv3d')
 
-    def forward(self, voxel_features, coors, batch_size):
+        self.dense_conv_in = nn.Conv3d(5, 16, (3, 3, 3), padding=[1,1,1], bias=False)
+        self.dense_conv_out = nn.Conv3d(128, 128, (1, 1, 3), padding=[0, 0, 0], stride=[1, 1, 2], bias=False)\
+    
+    def swap_convs(self):
+        self.conv_input[0] = self.dense_conv_in
+        self.conv_out[0] = self.dense_conv_out
+
+    def forward(self, voxel_features, coors, batch_size=1):
         """Forward of SparseEncoder.
 
         Args:
@@ -126,10 +134,23 @@ class BEVFusionSparseEncoder(SparseEncoder):
                 output features. When self.return_middle_feats is True, the
                 module returns middle features.
         """
+        # import torch
+        # torch.save(dict(voxel_features = voxel_features, ## .cpu(),
+        #                 coors=coors, #.detach(), #.cpu(),
+        #                 batch_size=batch_size), './bhushan_data/bev_fusion_sparse_encoder_cuda.pt')
         coors = coors.int()
         input_sp_tensor = SparseConvTensor(voxel_features, coors,
                                            self.sparse_shape, batch_size)
-        x = self.conv_input(input_sp_tensor)
+        out = self.conv_input[0](input_sp_tensor)
+
+        # dense_input = input_sp_tensor.dense()
+        # d_out = self.dense_conv_in(dense_input)
+        # d_out = self.conv_input[1](d_out)
+        # d_out = self.conv
+        # x_conv = self.conv_input[1](input_sp_tensor)
+
+        # x = self.conv_input(dense_input)
+
 
         encode_features = []
         for encoder_layer in self.encoder_layers:

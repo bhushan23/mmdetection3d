@@ -163,6 +163,7 @@ def make_sparse_convmodule(in_channels: int,
                            conv_type: str = 'SubMConv3d',
                            norm_cfg: OptConfigType = None,
                            order: Tuple[str] = ('conv', 'norm', 'act'),
+                           make_dense=False,
                            **kwargs) -> SparseSequential:
     """Make sparse convolution module.
 
@@ -198,15 +199,20 @@ def make_sparse_convmodule(in_channels: int,
                     'SparseInverseConv3d', 'SparseInverseConv2d',
                     'SparseInverseConv1d'
             ]:
-                layers.append(
-                    build_conv_layer(
-                        conv_cfg,
-                        in_channels,
-                        out_channels,
-                        kernel_size,
-                        stride=stride,
-                        padding=padding,
-                        bias=False))
+                if make_dense:
+                    layers.append(
+                        nn.Conv3d(in_channels, out_channels, kernel_size, stride=stride, padding=padding, bias=False)
+                    )
+                else:
+                    layers.append(
+                        build_conv_layer(
+                            conv_cfg,
+                            in_channels,
+                            out_channels,
+                            kernel_size,
+                            stride=stride,
+                            padding=padding,
+                            bias=False))
             else:
                 layers.append(
                     build_conv_layer(
@@ -216,6 +222,8 @@ def make_sparse_convmodule(in_channels: int,
                         kernel_size,
                         bias=False))
         elif layer == 'norm':
+            if make_dense:
+                layers.append()
             layers.append(build_norm_layer(norm_cfg, out_channels)[1])
         elif layer == 'act':
             layers.append(nn.ReLU(inplace=True))

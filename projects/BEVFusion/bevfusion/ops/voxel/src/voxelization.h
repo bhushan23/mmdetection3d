@@ -1,6 +1,8 @@
 #pragma once
 #include <torch/extension.h>
 
+#include <iostream>
+#include <chrono>
 typedef enum { SUM = 0, MEAN = 1, MAX = 2 } reduce_t;
 
 namespace voxelization {
@@ -63,14 +65,23 @@ inline int hard_voxelize(const at::Tensor &points, at::Tensor &voxels,
                          const int NDim = 3, const bool deterministic = true) {
   if (points.device().is_cuda()) {
 #ifdef WITH_CUDA
+  auto start = std::chrono::steady_clock::now();
+  int vox_num = 0;
+  for (int i = 0; i < 100; i++) {
     if (deterministic) {
-      return hard_voxelize_gpu(points, voxels, coors, num_points_per_voxel,
+      vox_num = hard_voxelize_gpu(points, voxels, coors, num_points_per_voxel,
                                voxel_size, coors_range, max_points, max_voxels,
                                NDim);
-    }
-    return nondisterministic_hard_voxelize_gpu(points, voxels, coors, num_points_per_voxel,
+    } else {
+      vox_num = nondisterministic_hard_voxelize_gpu(points, voxels, coors, num_points_per_voxel,
                                                voxel_size, coors_range, max_points, max_voxels,
                                                NDim);
+      }
+  }
+  auto end = std::chrono::steady_clock::now();
+  std::chrono::duration<double> diff = end - start;
+  std::cout << "Duration [seconds]: " << diff.count() << "\n";
+  return vox_num;
 #else
     AT_ERROR("Not compiled with GPU support");
 #endif
