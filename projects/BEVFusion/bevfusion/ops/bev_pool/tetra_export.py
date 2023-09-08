@@ -1,8 +1,9 @@
 import torch
 import tetra_hub as hub
-# from .bev_pool import bev_pool
 
-# Export 
+import torch.nn.functional as F
+
+# Export
 class QCS(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -19,14 +20,12 @@ class QCS(torch.nn.Module):
         kept = torch.ones(x_prefix.shape[0], device=x_prefix.device, dtype=torch.bool)
 
         kept[1:] = ranks[1:] != ranks[:-1]
-        interval_starts = torch.where(kept)[0].int()
-        interval_lengths = torch.zeros_like(interval_starts)
-        interval_lengths[:-1] = interval_starts[1:] - interval_starts[:-1]
-        interval_lengths[-1] = x_prefix.shape[0] - interval_starts[-1]
-        interval_ends = interval_starts + interval_lengths - 1
+        interval_starts = torch.where(kept)[0].type(torch.int64)
+        interval_lengths = interval_starts[1:] - interval_starts[:-1]
+        
+        interval_ends = interval_starts[:-1] + interval_lengths - 1
+        interval_ends = F.pad(interval_ends, (0, 1), value=x_prefix.shape[0]-1)
 
-        interval_ends = interval_ends.type(torch.int64)
-        interval_starts = interval_starts.type(torch.int64)
         x_prefix = x_prefix[interval_ends] - x_prefix[interval_starts] + x[interval_starts]
 
         gf_W, gf_H, gf_D, gf_B = torch.split(geom_feats, split_size_or_sections=[1, 1, 1, 1], dim=1)
@@ -37,7 +36,7 @@ class QCS(torch.nn.Module):
         C = x_prefix.shape[-1]
         out = torch.zeros((B*D*H*W, C), device=x_prefix.device, dtype=x_prefix.dtype)
         out[geom_feats, :] += x_prefix
-        out = out.reshape((B, D, H, W, C))    
+        out = out.reshape((B, D, H, W, C))
 
         # save kept for backward
         # ctx.save_for_backward(kept)
@@ -48,6 +47,10 @@ class QCS(torch.nn.Module):
         return out
 
     def forward(self, feats, coords, B=1, D=1, H=360, W=360):
+        coords = coords * 12
+        coords = coords.type(torch.int64)
+        coords = torch.clamp(coords, min=0, max=H-1)
+        feats = torch.clamp(feats, min=0.5, max=0.5)
         ranks = (
             coords[:, 0] * (W * D * B) + coords[:, 1] * (D * B) +
             coords[:, 2] * B + coords[:, 3])
@@ -61,19 +64,14 @@ m.eval()
 m.cpu()
 m = m.to('cpu')
 
-root_path = "/home/bhushan/work/bev-fusion/repo/mmdetection3d/"
+root_path = "./"
 import os
 
-data = torch.load(os.path.join(root_path, "bev_pool_data.pt"))
+data = torch.load(os.path.join(root_path, "data_input_cpu.pt"))
                       
 f = data['feats'].detach().cpu()
 c = data['coords'].detach().cpu()
 traced_model = torch.jit.trace(m, (f, c))
-
-print(traced_model.graph)
-print(traced_model.code)
-
-
 
 
 hub.submit_profile_job(traced_model, name="bev_pool",

@@ -2,9 +2,10 @@ import torch
 
 from . import bev_pool_ext
 
-
 from math import log10, sqrt
 import numpy as np
+import torch
+import torch.nn.functional as F
   
 def PSNR(original, compressed):
     mse = np.mean((original - compressed) ** 2)
@@ -30,14 +31,12 @@ class QuickCumsum(torch.autograd.Function):
         kept = torch.ones(x_prefix.shape[0], device=x_prefix.device, dtype=torch.bool)
 
         kept[1:] = ranks[1:] != ranks[:-1]
-        interval_starts = torch.where(kept)[0].int()
-        interval_lengths = torch.zeros_like(interval_starts)
-        interval_lengths[:-1] = interval_starts[1:] - interval_starts[:-1]
-        interval_lengths[-1] = x_prefix.shape[0] - interval_starts[-1]
-        interval_ends = interval_starts + interval_lengths - 1
+        interval_starts = torch.where(kept)[0].type(torch.int64)
+        interval_lengths = interval_starts[1:] - interval_starts[:-1]
+        
+        interval_ends = interval_starts[:-1] + interval_lengths - 1
+        interval_ends = F.pad(interval_ends, (0, 1), value=x_prefix.shape[0]-1)
 
-        interval_ends = interval_ends.type(torch.int64)
-        interval_starts = interval_starts.type(torch.int64)
         x_prefix = x_prefix[interval_ends] - x_prefix[interval_starts] + x[interval_starts]
 
         gf_W, gf_H, gf_D, gf_B = torch.split(geom_feats, split_size_or_sections=[1, 1, 1, 1], dim=1)
@@ -48,14 +47,7 @@ class QuickCumsum(torch.autograd.Function):
         C = x_prefix.shape[-1]
         out = torch.zeros((B*D*H*W, C), device=x_prefix.device, dtype=x_prefix.dtype)
         out[geom_feats, :] += x_prefix
-        out = out.reshape((B, D, H, W, C))    
-
-        # save kept for backward
-        # ctx.save_for_backward(kept)
-
-        # # no gradient for geom_feats
-        # ctx.mark_non_differentiable(geom_feats)
-
+        out = out.reshape((B, D, H, W, C))
         return out
 
     @staticmethod
@@ -119,18 +111,30 @@ class QuickCumsumCuda(torch.autograd.Function):
 def bev_pool(feats, coords, B, D, H, W):
     assert feats.shape[0] == coords.shape[0]
 
+    # NOTE: without following clamp,
+    # TFLite model fails for sub-sequent loads.
+    # This is probably due to random data being fed by profiler.
+    # As part of model pipeline, this might work. But will have to check.
+    # coords = coords * 12
+    # coords = coords.type(torch.int64)
+    # coords = torch.clamp(coords, min=0, max=H-1)
+    # feats = torch.clamp(feats, min=0.5, max=0.5)
+
     ranks = (
         coords[:, 0] * (W * D * B) + coords[:, 1] * (D * B) +
         coords[:, 2] * B + coords[:, 3])
     indices = ranks.argsort()
     feats, coords, ranks = feats[indices], coords[indices], ranks[indices]
 
-    # x = QuickCumsumCuda.apply(feats, coords, ranks, B, D, H, W)
     x = QuickCumsum.apply(feats, coords, ranks, B, D, H, W)
 
-    # xnp = x.detach().cpu().numpy()
-    # x_oursnp = x_ours.detach().cpu().numpy()
-    # print(PSNR(xnp, x_oursnp))
+    # Quick check for PSNR
+    # x_cuda = QuickCumsumCuda.apply(feats, coords, ranks, B, D, H, W)
+    # x_cuda_np = x_cuda.detach().cpu().numpy()
+    # x_ours_np = x.detach().cpu().numpy()
+    # print(PSNR(x_cuda_np, x_ours_np))
+
+    # NOTE: Work-around to slice input in expected output shape
     # out_size = B * D * H * W
     # x_sliced = feats[:out_size, :]
     # x = x_sliced.reshape((B, D, H, W, feats.shape[-1]))
