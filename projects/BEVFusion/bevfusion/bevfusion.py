@@ -169,6 +169,9 @@ class BEVFusion(Base3DDetector):
             points = [point.float() for point in points]
             feats, coords, sizes = self.voxelize(points)
             batch_size = coords[-1, 0] + 1
+
+        # traced_model = torch.jit.trace(self.pts_middle_encoder, (feats, coords))
+        # torch.jit.save(traced_model, "self.pts_middle_encoder_sparse_encoder.jit.pt")
         x = self.pts_middle_encoder(feats, coords, batch_size)
         return x
 

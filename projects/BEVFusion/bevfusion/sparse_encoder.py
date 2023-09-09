@@ -73,15 +73,15 @@ class BEVFusionSparseEncoder(SparseEncoder):
         assert set(order) == {'conv', 'norm', 'act'}
 
         if self.order[0] != 'conv':  # pre activate
-            self.conv_input = make_sparse_convmodule(
-                in_channels,
-                self.base_channels,
-                3,
-                norm_cfg=norm_cfg,
-                padding=1,
-                indice_key='subm1',
-                conv_type='SubMConv3d',
-                order=('conv', ))
+            # self.conv_input = make_sparse_convmodule(
+            #     in_channels,
+            #     self.base_channels,
+            #     3,
+            #     norm_cfg=norm_cfg,
+            #     padding=1,
+            #     indice_key='subm1',
+            #     conv_type='SubMConv3d',
+            #     order=('conv', ))
             self.dense_conv_input = make_sparse_convmodule(
                 in_channels,
                 self.base_channels,
@@ -93,14 +93,14 @@ class BEVFusionSparseEncoder(SparseEncoder):
                 order=('conv', ),
                 make_dense=True)
         else:  # post activate
-            self.conv_input = make_sparse_convmodule(
-                in_channels,
-                self.base_channels,
-                3,
-                norm_cfg=norm_cfg,
-                padding=1,
-                indice_key='subm1',
-                conv_type='SubMConv3d')
+            # self.conv_input = make_sparse_convmodule(
+            #     in_channels,
+            #     self.base_channels,
+            #     3,
+            #     norm_cfg=norm_cfg,
+            #     padding=1,
+            #     indice_key='subm1',
+            #     conv_type='SubMConv3d')
             self.dense_conv_input = make_sparse_convmodule(
                 in_channels,
                 self.base_channels,
@@ -117,15 +117,15 @@ class BEVFusionSparseEncoder(SparseEncoder):
             self.base_channels,
             block_type=block_type)
 
-        self.conv_out = make_sparse_convmodule(
-            encoder_out_channels,
-            self.output_channels,
-            kernel_size=(1, 1, 3),
-            stride=(1, 1, 2),
-            norm_cfg=norm_cfg,
-            padding=0,
-            indice_key='spconv_down2',
-            conv_type='SparseConv3d')
+        # self.conv_out = make_sparse_convmodule(
+        #     encoder_out_channels,
+        #     self.output_channels,
+        #     kernel_size=(1, 1, 3),
+        #     stride=(1, 1, 2),
+        #     norm_cfg=norm_cfg,
+        #     padding=0,
+        #     indice_key='spconv_down2',
+        #     conv_type='SparseConv3d')
 
         self.dense_conv_out = make_sparse_convmodule(
             encoder_out_channels,
@@ -138,29 +138,7 @@ class BEVFusionSparseEncoder(SparseEncoder):
             conv_type='SparseConv3d',
             make_dense=True)
 
-    def forward(self, voxel_features, coors, batch_size=1):
-        """Forward of SparseEncoder.
-
-        Args:
-            voxel_features (torch.Tensor): Voxel features in shape (N, C).
-            coors (torch.Tensor): Coordinates in shape (N, 4),
-                the columns in the order of (batch_idx, z_idx, y_idx, x_idx).
-            batch_size (int): Batch size.
-
-        Returns:
-            torch.Tensor | tuple[torch.Tensor, list]: Return spatial features
-                include:
-
-            - spatial_features (torch.Tensor): Spatial features are out from
-                the last layer.
-            - encode_features (List[SparseConvTensor], optional): Middle layer
-                output features. When self.return_middle_feats is True, the
-                module returns middle features.
-        """
-        # import torch
-        # torch.save(dict(voxel_features = voxel_features, ## .cpu(),
-        #                 coors=coors, #.detach(), #.cpu(),
-        #                 batch_size=batch_size), './bhushan_data/bev_fusion_sparse_encoder_cuda.pt')
+    def forward_conv_in(self, voxel_features, coors, batch_size=1):
         coors = coors.int()
         input_sp_tensor = SparseConvTensor(voxel_features, coors,
                                            self.sparse_shape, batch_size)
@@ -187,13 +165,16 @@ class BEVFusionSparseEncoder(SparseEncoder):
 
         x = input_sp_tensor.dense()
         x = self.dense_conv_input(x)
+        return x
 
-        encode_features = []
-        for encoder_layer in self.dense_encoder_layers:
+    def forward_encoder_layers(self, x, start=0, end=100):
+        # encode_features = []
+        for encoder_layer in self.dense_encoder_layers[start:end][0]:
             x = encoder_layer(x)
-            encode_features.append(x)
+        return x
 
-        spatial_features = self.dense_conv_out(encode_features[-1])
+    def forward_conv_outs(self, x):
+        spatial_features = self.dense_conv_out(x) # encode_features[-1])
 
         N, C, D, H, W = spatial_features.shape
         N, C, H, W, D = spatial_features.shape
@@ -201,6 +182,45 @@ class BEVFusionSparseEncoder(SparseEncoder):
         spatial_features = spatial_features.view(N, C * D, H, W)
 
         if self.return_middle_feats:
-            return spatial_features, encode_features
+            return spatial_features, [spatial_features]
         else:
             return spatial_features
+
+    def forward(self, voxel_features, coors, batch_size=1):
+        """Forward of SparseEncoder.
+
+        Args:
+            voxel_features (torch.Tensor): Voxel features in shape (N, C).
+            coors (torch.Tensor): Coordinates in shape (N, 4),
+                the columns in the order of (batch_idx, z_idx, y_idx, x_idx).
+            batch_size (int): Batch size.
+
+        Returns:
+            torch.Tensor | tuple[torch.Tensor, list]: Return spatial features
+                include:
+
+            - spatial_features (torch.Tensor): Spatial features are out from
+                the last layer.
+            - encode_features (List[SparseConvTensor], optional): Middle layer
+                output features. When self.return_middle_feats is True, the
+                module returns middle features.
+        """
+        import torch
+        # torch.save(dict(voxel_features = voxel_features.detach().cpu(),
+        #                 coors=coors.detach().cpu(),
+        #                 batch_size=batch_size), './bhushan_data/bev_fusion_sparse_encoder_conv_in.pt')
+        
+        # print(voxel_features.shape, coors.shape)
+        x = self.forward_conv_in(voxel_features, coors, batch_size)
+
+        # torch.save(dict(x = x.detach().cpu()), './bhushan_data/bev_fusion_sparse_encoder_encoder_layers.pt')
+
+        x = self.forward_encoder_layers(x)
+
+        # torch.save(dict(x = x.detach().cpu()), './bhushan_data/bev_fusion_sparse_encoder_conv_out.pt')
+        x = self.forward_conv_outs(x)
+
+
+        return x
+
+       

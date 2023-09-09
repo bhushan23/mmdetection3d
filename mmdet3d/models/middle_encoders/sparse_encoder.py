@@ -83,15 +83,15 @@ class SparseEncoder(nn.Module):
         assert set(order) == {'conv', 'norm', 'act'}
 
         if self.order[0] != 'conv':  # pre activate
-            self.conv_input = make_sparse_convmodule(
-                in_channels,
-                self.base_channels,
-                3,
-                norm_cfg=norm_cfg,
-                padding=1,
-                indice_key='subm1',
-                conv_type='SubMConv3d',
-                order=('conv', ))
+            # self.conv_input = make_sparse_convmodule(
+            #     in_channels,
+            #     self.base_channels,
+            #     3,
+            #     norm_cfg=norm_cfg,
+            #     padding=1,
+            #     indice_key='subm1',
+            #     conv_type='SubMConv3d',
+            #     order=('conv', ))
             self.dense_conv_input = make_sparse_convmodule(
                 in_channels,
                 self.base_channels,
@@ -102,14 +102,14 @@ class SparseEncoder(nn.Module):
                 conv_type='SubMConv3d',
                 order=('conv', ))
         else:  # post activate
-            self.conv_input = make_sparse_convmodule(
-                in_channels,
-                self.base_channels,
-                3,
-                norm_cfg=norm_cfg,
-                padding=1,
-                indice_key='subm1',
-                conv_type='SubMConv3d')
+            # self.conv_input = make_sparse_convmodule(
+            #     in_channels,
+            #     self.base_channels,
+            #     3,
+            #     norm_cfg=norm_cfg,
+            #     padding=1,
+            #     indice_key='subm1',
+            #     conv_type='SubMConv3d')
             self.dense_conv_input = make_sparse_convmodule(
                 in_channels,
                 self.base_channels,
@@ -131,15 +131,15 @@ class SparseEncoder(nn.Module):
         #     self.base_channels,
         #     block_type=block_type)
 
-        self.conv_out = make_sparse_convmodule(
-            encoder_out_channels,
-            self.output_channels,
-            kernel_size=(3, 1, 1),
-            stride=(2, 1, 1),
-            norm_cfg=norm_cfg,
-            padding=0,
-            indice_key='spconv_down2',
-            conv_type='SparseConv3d')
+        # self.conv_out = make_sparse_convmodule(
+        #     encoder_out_channels,
+        #     self.output_channels,
+        #     kernel_size=(3, 1, 1),
+        #     stride=(2, 1, 1),
+        #     norm_cfg=norm_cfg,
+        #     padding=0,
+        #     indice_key='spconv_down2',
+        #     conv_type='SparseConv3d')
         
 
         self.dense_conv_out = make_sparse_convmodule(
@@ -192,18 +192,23 @@ class SparseEncoder(nn.Module):
         x = input_sp_tensor.dense()
         x = self.dense_conv_input(x)
 
-        encode_features = []
+        # encode_features = []
+        # for encoder_layer in self.dense_encoder_layers:
+        #     x = encoder_layer(x)
+        #     encode_features.append(x)
+
+        # encode_features = []
         for encoder_layer in self.dense_encoder_layers:
             x = encoder_layer(x)
-            encode_features.append(x)
+            # encode_features.append(x)
 
-        spatial_features = self.dense_conv_out(encode_features[-1])
+        spatial_features = self.dense_conv_out(x)
 
         N, C, D, H, W = spatial_features.shape
         spatial_features = spatial_features.view(N, C * D, H, W)
 
         if self.return_middle_feats:
-            return spatial_features, encode_features
+            return spatial_features, [x]
         else:
             return spatial_features
 
@@ -230,7 +235,7 @@ class SparseEncoder(nn.Module):
             int: The number of encoder output channels.
         """
         assert block_type in ['conv_module', 'basicblock']
-        self.encoder_layers = SparseSequential()
+        # self.encoder_layers = SparseSequential()
         import torch.nn as nn
         self.dense_encoder_layers = nn.Sequential()
 
@@ -242,16 +247,16 @@ class SparseEncoder(nn.Module):
                 # each stage started with a spconv layer
                 # except the first stage
                 if i != 0 and j == 0 and block_type == 'conv_module':
-                    blocks_list.append(
-                        make_block(
-                            in_channels,
-                            out_channels,
-                            3,
-                            norm_cfg=norm_cfg,
-                            stride=2,
-                            padding=padding,
-                            indice_key=f'spconv{i + 1}',
-                            conv_type='SparseConv3d'))
+                    # blocks_list.append(
+                    #     make_block(
+                    #         in_channels,
+                    #         out_channels,
+                    #         3,
+                    #         norm_cfg=norm_cfg,
+                    #         stride=2,
+                    #         padding=padding,
+                    #         indice_key=f'spconv{i + 1}',
+                    #         conv_type='SparseConv3d'))
                     dense_block_list.append(
                         make_block(
                             in_channels,
@@ -266,16 +271,16 @@ class SparseEncoder(nn.Module):
                 elif block_type == 'basicblock':
                     if j == len(blocks) - 1 and i != len(
                             self.encoder_channels) - 1:
-                        blocks_list.append(
-                            make_block(
-                                in_channels,
-                                out_channels,
-                                3,
-                                norm_cfg=norm_cfg,
-                                stride=2,
-                                padding=padding,
-                                indice_key=f'spconv{i + 1}',
-                                conv_type='SparseConv3d'))
+                        # blocks_list.append(
+                        #     make_block(
+                        #         in_channels,
+                        #         out_channels,
+                        #         3,
+                        #         norm_cfg=norm_cfg,
+                        #         stride=2,
+                        #         padding=padding,
+                        #         indice_key=f'spconv{i + 1}',
+                        #         conv_type='SparseConv3d'))
                         dense_block_list.append(
                             make_block(
                                 in_channels,
@@ -289,12 +294,12 @@ class SparseEncoder(nn.Module):
                                 make_dense=True))
                     
                     else:
-                        blocks_list.append(
-                            SparseBasicBlock(
-                                in_channels,
-                                out_channels,
-                                norm_cfg=norm_cfg,
-                                conv_cfg=conv_cfg))
+                        # blocks_list.append(
+                        #     SparseBasicBlock(
+                        #         in_channels,
+                        #         out_channels,
+                        #         norm_cfg=norm_cfg,
+                        #         conv_cfg=conv_cfg))
                         dense_block_list.append(
                             DenseBasicBlock(
                                 in_channels,
@@ -302,15 +307,15 @@ class SparseEncoder(nn.Module):
                                 norm_cfg={ "type": "BN3d"},
                                 conv_cfg={"type": "Conv3d"}))
                 else:
-                    blocks_list.append(
-                        make_block(
-                            in_channels,
-                            out_channels,
-                            3,
-                            norm_cfg=norm_cfg,
-                            padding=padding,
-                            indice_key=f'subm{i + 1}',
-                            conv_type='SubMConv3d'))
+                    # blocks_list.append(
+                    #     make_block(
+                    #         in_channels,
+                    #         out_channels,
+                    #         3,
+                    #         norm_cfg=norm_cfg,
+                    #         padding=padding,
+                    #         indice_key=f'subm{i + 1}',
+                    #         conv_type='SubMConv3d'))
                     dense_block_list.append(
                         make_block(
                             in_channels,
@@ -323,10 +328,11 @@ class SparseEncoder(nn.Module):
                             make_dense=True))
                 in_channels = out_channels
             stage_name = f'encoder_layer{i + 1}'
-            stage_layers = SparseSequential(*blocks_list)
+            # stage_layers = SparseSequential(*blocks_list)
             # layers = nn.Sequential(*dense_block_list)
-            self.encoder_layers.add_module(stage_name, stage_layers)
+            # self.encoder_layers.add_module(stage_name, stage_layers)
             # self.dense_encoder_layers.add_module(f"dense_{stage_name}", layers)
+            # self.dense_encoder_layers.append(nn.Sequential(*dense_block_list).eval())
             self.dense_encoder_layers.add_module(f"dense_{stage_name}", nn.Sequential(*dense_block_list))
         return out_channels
 

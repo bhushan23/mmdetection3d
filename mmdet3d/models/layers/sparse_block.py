@@ -154,7 +154,7 @@ class SparseBasicBlock(BasicBlock, SparseModule):
         return out
 
 
-class DenseBasicBlock(BasicBlock, SparseModule):
+class DenseBasicBlock(nn.Module):
     """Sparse basic block for PartA^2.
 
     Sparse basic block implemented with submanifold sparse convolution.
@@ -182,36 +182,50 @@ class DenseBasicBlock(BasicBlock, SparseModule):
                  indice_key: Optional[str] = None,
                  conv_cfg: OptConfigType = None,
                  norm_cfg: OptConfigType = None) -> None:
-        SparseModule.__init__(self)
-        if conv_cfg is None:
-            conv_cfg = dict(type='SubMConv3d')
-        # conv_cfg.setdefault('indice_key', indice_key)
-        if norm_cfg is None:
-            norm_cfg = dict(type='BN1d')
-        BasicBlock.__init__(
-            self,
-            inplanes,
-            planes,
-            stride=stride,
-            downsample=downsample,
-            conv_cfg=conv_cfg,
-            norm_cfg=norm_cfg)
+        super().__init__()
+        # SparseModule.__init__(self)
+        # if conv_cfg is None:
+        #     conv_cfg = dict(type='SubMConv3d')
+        # # conv_cfg.setdefault('indice_key', indice_key)
+        # if norm_cfg is None:
+        #     norm_cfg = dict(type='BN1d')
+        # BasicBlock.__init__(
+        #     self,
+        #     inplanes,
+        #     planes,
+        #     stride=stride,
+        #     downsample=downsample,
+        #     conv_cfg=conv_cfg,
+        #     norm_cfg=norm_cfg)
+        self.conv1 = nn.Conv3d(inplanes, planes, kernel_size=[3, 3, 3], bias=False)
+        self.bn1 = nn.BatchNorm3d(planes, track_running_stats=False)
+        self.conv2 = nn.Conv3d(inplanes, planes, kernel_size=[3, 3, 3], bias=False)
+        self.bn2 = nn.BatchNorm3d(planes, track_running_stats=False)
+        self.relu = nn.ReLU(inplace=True)
 
 
-    def dense_forward(self, x):
+    def forward(self, x):
         identity = x
         out = self.conv1(x)
-        out = replace_feature(out, self.norm1(out))
-        out = replace_feature(out, self.relu(out))
+        out = self.bn1(out)
+        out = self.relu(out)
 
-        out = self.conv2(out)
-        out = replace_feature(out, self.norm2(out))
 
-        if self.downsample is not None:
-            identity = self.downsample(x)
+        # out = self.conv2(x)
+        # out = self.bn2(out) + identity
+        # out = self.relu(out)
 
-        out = replace_feature(out, out.features + identity)
-        out = replace_feature(out, self.relu(out.features))
+        # out = replace_feature(out, self.norm1(out))
+        # out = replace_feature(out, self.relu(out))
+
+        # out = self.conv2(out)
+        # out = replace_feature(out, self.norm2(out))
+
+        # if self.downsample is not None:
+        #     identity = self.downsample(x)
+
+        # out = replace_feature(out, out.features + identity)
+        # out = replace_feature(out, self.relu(out.features))
 
         return out
 
@@ -284,7 +298,7 @@ def make_sparse_convmodule(in_channels: int,
                         bias=False))
         elif layer == 'norm':
             if make_dense:
-                layers.append(nn.BatchNorm3d(out_channels))
+                layers.append(nn.BatchNorm3d(out_channels, track_running_stats=False))
             else:
                 layers.append(build_norm_layer(norm_cfg, out_channels)[1])
         elif layer == 'act':

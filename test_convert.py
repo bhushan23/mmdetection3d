@@ -117,17 +117,17 @@ class LidarEncoder(torch.nn.Module):
     def forward(self, points):
         return self.model.extract_pts_feat(points)
 
-class BEVFusionSparseEncoder(torch.nn.Module):
-    def __init__(self, model):
-        super().__init__()
-        self.model = model
+# class BEVFusionSparseEncoder(torch.nn.Module):
+#     def __init__(self, model):
+#         super().__init__()
+#         self.model = model
 
-    def forward(self, feats, coords, batch_size=1):
-        """
-        bev_pool_output:
-        """
-        # return self.model.pts_middle_encoder(feats, coords, batch_size)
-        return self.model(feats, coords, batch_size)
+#     def forward(self, feats, coords, batch_size=1):
+#         """
+#         bev_pool_output:
+#         """
+#         # return self.model.pts_middle_encoder(feats, coords, batch_size)
+#         return self.model(feats, coords, batch_size)
 
 
 @pytest.fixture(scope="module")
@@ -231,14 +231,106 @@ def test_convert_bbox_head(bev_model):
     traced_model = torch.jit.trace(wrapper, input_example)
     torch.jit.save(traced_model, f"export/{export_name}.jit.pt")
 
-def test_convert_sparse_encoder(bev_model):
-    export_name = "bev_sparse_encoder"
-    data = torch.load('bhushan_data/bev_fusion_sparse_encoder.pt')
-    wrapper = BEVFusionSparseEncoder(bev_model.pts_middle_encoder).to('cpu') #.to('cpu')
-    print(wrapper)
-    # assert 0
-    input_example = (data['voxel_features'], data['coors']) #, data['batch_size'])
-    # torch.onnx.export(wrapper, input_example,
-    #                   f"export/{export_name}.onnx")
-    traced_model = torch.jit.trace(wrapper, input_example)
-    torch.jit.save(traced_model, f"export/{export_name}.jit.pt")
+
+class BEVFusionSparseEncoder_ConvInput(torch.nn.Module):
+    def __init__(self, model):
+        super().__init__()
+        self.model = model
+
+    def forward(self, feats, coords, batch_size=1):
+        """
+        bev_pool_output:
+        """
+        # return self.model.pts_middle_encoder(feats, coords, batch_size)
+        return self.model.forward_conv_in(feats, coords, batch_size)
+
+class BEVFusionSparseEncoder_EncoderLayers(torch.nn.Module):
+    def __init__(self, model, start=0, end=100):
+        super().__init__()
+        self.model = model
+        self.start = start
+        self.end = end
+
+    def forward(self, feats):
+        """
+        bev_pool_output:
+        """
+        # return self.model.pts_middle_encoder(feats, coords, batch_size)
+        return self.model.forward_encoder_layers(feats, self.start, self.end)
+    
+class BEVFusionSparseEncoder_ConvOutput(torch.nn.Module):
+    def __init__(self, model):
+        super().__init__()
+        self.model = model
+
+    def forward(self, feats):
+        """
+        bev_pool_output:
+        """
+        # return self.model.pts_middle_encoder(feats, coords, batch_size)
+        return self.model.forward_conv_outs(feats)
+
+    
+
+def test_convert_sparse_encoder_conv_in(bev_model):
+    with torch.no_grad():
+        export_name = "bev_sparse_encoder_conv_in"
+        data = torch.load('bhushan_data/bev_fusion_sparse_encoder_conv_in.pt')
+        wrapper = BEVFusionSparseEncoder_ConvInput(bev_model.pts_middle_encoder).to('cpu') #.to('cpu')
+        wrapper.eval()
+        input_example = (data['voxel_features'], data['coors']) #, data['batch_size'])
+        print(input_example[0].shape, input_example[1].shape)
+        torch.onnx.export(wrapper, input_example,
+                          f"export/{export_name}.onnx", opset_version=11)
+        traced_model = torch.jit.trace(wrapper, input_example, check_trace=False)
+        torch.jit.save(traced_model, f"export/{export_name}.jit.pt")
+
+
+def test_convert_sparse_encoder_encoder_layers(bev_model):
+    with torch.no_grad():
+        export_name = "bev_sparse_encoder_encoder_layers"
+        data = torch.load('bhushan_data/bev_fusion_sparse_encoder_encoder_layers.pt')
+        wrapper = BEVFusionSparseEncoder_EncoderLayers(bev_model.pts_middle_encoder, 0, 1).to('cpu') #.to('cpu')
+        wrapper.eval()
+        input_example = (data['x'][:, :600, :600, :]) #, data['batch_size'])
+        # print(input_example[0].shape)
+        torch.onnx.export(wrapper, input_example,
+                          f"export/{export_name}.onnx", opset_version=11)
+        # traced_model = torch.jit.trace(wrapper, input_example, check_trace=False)
+        # torch.jit.save(traced_model, f"export/{export_name}.jit.pt")
+
+def test_convert_sparse_encoder_conv_out(bev_model):
+    with torch.no_grad():
+        export_name = "bev_sparse_encoder_conv_out"
+        data = torch.load('bhushan_data/bev_fusion_sparse_encoder_conv_out.pt')
+        wrapper = BEVFusionSparseEncoder_ConvOutput(bev_model.pts_middle_encoder).to('cpu') #.to('cpu')
+        wrapper.eval()
+        input_example = (data['voxel_features']) #, data['batch_size'])
+        # print(input_example[0].shape, input_example[1].shape)
+        torch.onnx.export(wrapper, input_example,
+                          f"export/{export_name}.onnx", opset_version=11)
+        traced_model = torch.jit.trace(wrapper, input_example, check_trace=False)
+        torch.jit.save(traced_model, f"export/{export_name}.jit.pt")
+
+def test_convert_sparse(bev_model):
+    import os
+    import psutil
+    from concurrent import futures
+
+    #JIT trace test
+    import torch
+
+
+
+    with torch.no_grad():
+        # Create a simple resnet
+
+        # Get process id
+        process = psutil.Process(os.getpid())
+
+        # Repeat tracing
+        for i in range(0, 1000):
+            with futures.ProcessPoolExecutor() as executor:
+                future = executor.submit(test_convert_sparse_encoder)
+                futures.wait([future])
+            print("Iter: {} = {}".format(i, process.memory_full_info()))
