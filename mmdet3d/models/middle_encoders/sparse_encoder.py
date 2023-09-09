@@ -232,7 +232,7 @@ class SparseEncoder(nn.Module):
         assert block_type in ['conv_module', 'basicblock']
         self.encoder_layers = SparseSequential()
         import torch.nn as nn
-        self.dense_encoder_layers = []
+        self.dense_encoder_layers = nn.Sequential()
 
         for i, blocks in enumerate(self.encoder_channels):
             blocks_list = []
@@ -327,7 +327,7 @@ class SparseEncoder(nn.Module):
             # layers = nn.Sequential(*dense_block_list)
             self.encoder_layers.add_module(stage_name, stage_layers)
             # self.dense_encoder_layers.add_module(f"dense_{stage_name}", layers)
-            self.dense_encoder_layers = dense_block_list
+            self.dense_encoder_layers.add_module(f"dense_{stage_name}", nn.Sequential(*dense_block_list))
         return out_channels
 
 
